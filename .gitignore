@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+build/
+
+# TypeScript incremental build
+*.tsbuildinfo
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Cache / temporary files
+.cache/
+.tmp/
+temp/
+tmp/
+
+# NestJS
+.nest/
+
+# IDEs / Editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+
+# Operating System
+.DS_Store
+Thumbs.db
+
+# Docker / local volumes
+docker-data/
+postgres-data/
+
+# Misc
+*.local
