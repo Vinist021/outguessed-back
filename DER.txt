@@ -1,0 +1,552 @@
+Project OutGuessed {
+  database_type: 'PostgreSQL'
+  Note: 'Estado oficial e historico minimo. Sessoes, conexoes e chat ficam no Redis; ver Redis.md.'
+}
+
+// Este DBML orienta migrations; nao substitui validacoes transacionais de rules.md.
+// Ao encerrar uma partida: excluir as tabelas de execucao e bots REMOVED de
+// match_players. Permanecem somente matches e participantes do resultado.
+
+Enum content_visibility {
+  PUBLIC
+  PRIVATE
+}
+
+Enum board_origin {
+  OFFICIAL
+  CUSTOM
+}
+
+Enum evaluation_mode {
+  EXACT
+  PLAYER_JUDGE
+  AI
+}
+
+Enum match_status {
+  WAITING
+  STARTING
+  QUESTION
+  EVALUATING
+  REVEAL
+  SCOREBOARD
+  FINISHED
+  CANCELLED
+}
+
+Enum terminal_reason {
+  VICTORY
+  HOST_CANCELLED
+  LOBBY_IDLE_TIMEOUT
+  NO_ELIGIBLE_HOST
+  NO_HUMAN_AVAILABLE
+}
+
+Enum participant_kind {
+  USER
+  GUEST
+  BOT
+}
+
+Enum human_kind {
+  USER
+  GUEST
+}
+
+Enum participant_status {
+  ACTIVE
+  DISCONNECTED
+  ABANDONED
+  KICKED
+  REMOVED
+}
+
+Enum round_status {
+  ACTIVE
+  FINISHED
+}
+
+Enum round_end_reason {
+  CORRECT_ANSWER
+  ZERO_MOVEMENT
+}
+
+Enum turn_status {
+  OPEN
+  EVALUATING
+  FINISHED
+}
+
+Enum turn_action {
+  ANSWER
+  TIMEOUT
+  BOT_PASS
+  INTERRUPTED
+  ZERO_MOVEMENT
+}
+
+Enum evaluation_source {
+  EXACT
+  PLAYER_JUDGE
+  AI
+  BOT_DRAW
+}
+
+Enum evaluation_result {
+  CORRECT
+  INCORRECT
+}
+
+Enum timer_kind {
+  LOBBY_IDLE
+  STARTING
+  TURN
+  JUDGE
+  AI
+  BOT_ACTION
+  REVEAL
+  SCOREBOARD
+  RECONNECT
+}
+
+// ============================================================
+// CONTEUDO EDITAVEL
+// ============================================================
+
+Table users {
+  id uuid [pk]
+  email text [not null, unique]
+  password_hash text [not null]
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+
+  Note: 'Cadastro nao cria sessao. Credenciais de sessao sao temporarias no Redis.'
+}
+
+Table decks {
+  id uuid [pk]
+  owner_id uuid [not null]
+  title text [not null]
+  description text
+  visibility content_visibility [not null, default: 'PRIVATE']
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+
+  indexes {
+    owner_id
+    visibility
+  }
+
+  Note: 'Somente o dono edita ou exclui. Publico expõe metadados, nunca cartas e gabaritos a terceiros antes da partida.'
+}
+
+Table cards {
+  id uuid [pk]
+  deck_id uuid [not null]
+  position int [not null]
+  main_hint text [not null]
+  answer text [not null]
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+
+  indexes {
+    (deck_id, position) [unique]
+  }
+
+  checks {
+    `position > 0` [name: 'cards_position_positive']
+  }
+
+  Note: 'Cada carta pertence a um unico deck. Validar 2 a 20 dicas adicionais por carta e pelo menos 10 cartas validas no inicio.'
+}
+
+Table card_hints {
+  id uuid [pk]
+  card_id uuid [not null]
+  position int [not null]
+  content text [not null]
+
+  indexes {
+    (card_id, position) [unique]
+  }
+
+  checks {
+    `position > 0` [name: 'card_hints_position_positive']
+  }
+
+  Note: 'Dicas adicionais ordenadas; posicao positiva e sequencial validada pela aplicacao.'
+}
+
+Table boards {
+  id uuid [pk]
+  origin board_origin [not null]
+  owner_id uuid
+  name text [not null]
+  description text
+  visibility content_visibility [not null, default: 'PUBLIC']
+  board_size int [not null]
+  evaluation_mode evaluation_mode [not null]
+  answer_time_seconds int [not null]
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+
+  indexes {
+    owner_id
+    visibility
+  }
+
+  checks {
+    `board_size BETWEEN 20 AND 200` [name: 'boards_size_range']
+    `answer_time_seconds IN (30, 60, 90)` [name: 'boards_answer_time_allowed']
+    `(origin = 'OFFICIAL' AND owner_id IS NULL AND visibility = 'PUBLIC') OR (origin = 'CUSTOM' AND owner_id IS NOT NULL)` [name: 'boards_origin_owner']
+  }
+
+  Note: 'OFFICIAL: sem dono, publico e imutavel. CUSTOM: dono obrigatorio. board_size 20..200; answer_time_seconds em 30, 60, 90.'
+}
+
+// ============================================================
+// RESULTADO E HISTORICO MINIMO
+// ============================================================
+
+Table matches {
+  id uuid [pk]
+  status match_status [not null, default: 'WAITING']
+  terminal_reason terminal_reason
+  winner_player_id uuid
+  created_at timestamptz [not null]
+  started_at timestamptz
+  finished_at timestamptz
+
+  indexes {
+    status
+  }
+
+  checks {
+    `(status = 'FINISHED' AND terminal_reason = 'VICTORY' AND winner_player_id IS NOT NULL) OR (status = 'CANCELLED' AND terminal_reason IS NOT NULL AND terminal_reason <> 'VICTORY' AND winner_player_id IS NULL) OR (status NOT IN ('FINISHED', 'CANCELLED') AND terminal_reason IS NULL)` [name: 'matches_terminal_result']
+    `winner_player_id IS NULL OR status IN ('REVEAL', 'SCOREBOARD', 'FINISHED')` [name: 'matches_victory_phase']
+  }
+
+  Note: 'FINISHED exige VICTORY e vencedor; CANCELLED exige motivo e nao tem vencedor. A vitoria pode ser registrada ainda em REVEAL/SCOREBOARD.'
+}
+
+Table match_players {
+  id uuid [pk]
+  match_id uuid [not null]
+  kind participant_kind [not null]
+  user_id uuid
+  guest_identity_id uuid
+  bot_number int
+  display_name text [not null]
+  normalized_display_name text [not null]
+  position int [not null, default: 0]
+
+  indexes {
+    (match_id, id) [unique]
+    (match_id, normalized_display_name) [unique]
+    (match_id, user_id) [unique]
+    (match_id, guest_identity_id) [unique]
+    (match_id, bot_number) [unique]
+  }
+
+  checks {
+    `position >= 0` [name: 'match_players_position_nonnegative']
+    `(kind = 'USER' AND user_id IS NOT NULL AND guest_identity_id IS NULL AND bot_number IS NULL) OR (kind = 'GUEST' AND user_id IS NULL AND guest_identity_id IS NOT NULL AND bot_number IS NULL) OR (kind = 'BOT' AND user_id IS NULL AND guest_identity_id IS NULL AND bot_number IS NOT NULL AND bot_number > 0)` [name: 'match_players_identity_kind']
+  }
+
+  Note: 'Exatamente uma identidade conforme kind. guest_identity_id identifica sessao temporaria validada no Redis, sem FK. Remover bots REMOVED no encerramento.'
+}
+
+// ============================================================
+// EXECUCAO ATIVA: EXCLUIR NO ESTADO TERMINAL
+// ============================================================
+
+Table match_runtime {
+  match_id uuid [pk]
+  code text [not null, unique]
+  selected_deck_id uuid
+  selected_board_id uuid
+  selected_answer_time_seconds int
+  host_player_id uuid
+  current_round_number int
+  current_cycle_number int [not null, default: 1]
+  next_bot_number int [not null, default: 1]
+  paused_no_human boolean [not null, default: false]
+  last_lobby_activity_at timestamptz [not null]
+
+  checks {
+    `selected_answer_time_seconds IS NULL OR selected_answer_time_seconds IN (30, 60, 90)` [name: 'match_runtime_answer_time_allowed']
+    `current_cycle_number > 0 AND next_bot_number > 0` [name: 'match_runtime_positive_counters']
+  }
+
+  Note: 'Uma linha por partida nao terminal. A unicidade de code vale somente enquanto a linha existir; a exclusao libera o codigo.'
+}
+
+Table match_player_runtime {
+  player_id uuid [pk]
+  match_id uuid [not null]
+  status participant_status [not null, default: 'ACTIVE']
+  is_ready boolean [not null, default: false]
+  is_provisional_bot boolean [not null, default: false]
+  turn_order int
+  eligible_from_round int [not null, default: 1]
+  joined_at timestamptz [not null]
+  left_at timestamptz
+
+  indexes {
+    (match_id, turn_order) [unique]
+    (match_id, status)
+  }
+
+  checks {
+    `eligible_from_round > 0` [name: 'match_player_runtime_eligibility_positive']
+    `turn_order IS NULL OR turn_order > 0` [name: 'match_player_runtime_turn_order_positive']
+  }
+
+  Note: 'ACTIVE/DISCONNECTED reservam vaga; ABANDONED/KICKED/REMOVED nao. Retorno de ABANDONED reutiliza player_id, zera posicao e move para o fim da ordem.'
+}
+
+Table human_presence_claims {
+  player_id uuid [pk]
+  match_id uuid [not null]
+  kind human_kind [not null]
+  identity_id uuid [not null]
+  claimed_at timestamptz [not null]
+
+  indexes {
+    (kind, identity_id) [unique]
+  }
+
+  Note: 'Guarda transacional minima para RN-019/020. Existe somente para humano ACTIVE ou DISCONNECTED; presenca operacional e conexoes ficam no Redis.'
+}
+
+Table match_snapshots {
+  match_id uuid [pk]
+  deck_title text [not null]
+  deck_description text
+  deck_owner_id uuid [not null]
+  deck_visibility content_visibility [not null]
+  board_name text [not null]
+  board_description text
+  board_origin board_origin [not null]
+  board_owner_id uuid
+  board_visibility content_visibility [not null]
+  board_size int [not null]
+  evaluation_mode evaluation_mode [not null]
+  answer_time_seconds int [not null]
+  frozen_at timestamptz [not null]
+
+  checks {
+    `board_size BETWEEN 20 AND 200` [name: 'match_snapshots_size_range']
+    `answer_time_seconds IN (30, 60, 90)` [name: 'match_snapshots_answer_time_allowed']
+  }
+
+  Note: 'Copia imutavel criada atomicamente em STARTING, sem FKs para originais; exclusoes posteriores nao a alteram.'
+}
+
+Table match_snapshot_cards {
+  id uuid [pk]
+  match_id uuid [not null]
+  position int [not null]
+  main_hint text [not null]
+  answer text [not null]
+
+  indexes {
+    (match_id, id) [unique]
+    (match_id, position) [unique]
+  }
+
+  checks {
+    `position > 0` [name: 'match_snapshot_cards_position_positive']
+  }
+
+  Note: 'Copia integral das cartas do deck. Gabarito deve ser exposto somente conforme RN-094 e RN-102.'
+}
+
+Table match_snapshot_hints {
+  id uuid [pk]
+  snapshot_card_id uuid [not null]
+  position int [not null]
+  content text [not null]
+
+  indexes {
+    (snapshot_card_id, position) [unique]
+  }
+
+  checks {
+    `position > 0` [name: 'match_snapshot_hints_position_positive']
+  }
+}
+
+Table rounds {
+  id uuid [pk]
+  match_id uuid [not null]
+  number int [not null]
+  cycle_number int [not null]
+  snapshot_card_id uuid [not null]
+  initiator_player_id uuid [not null]
+  current_judge_player_id uuid
+  effective_mode evaluation_mode [not null]
+  status round_status [not null, default: 'ACTIVE']
+  end_reason round_end_reason
+  moved_player_id uuid
+  movement_steps int
+  position_after int
+  started_at timestamptz [not null]
+  finished_at timestamptz
+
+  indexes {
+    (match_id, id) [unique]
+    (match_id, number) [unique]
+    (match_id, cycle_number, snapshot_card_id) [unique]
+  }
+
+  checks {
+    `number > 0 AND cycle_number > 0` [name: 'rounds_positive_numbers']
+    `movement_steps IS NULL OR movement_steps >= 0` [name: 'rounds_movement_nonnegative']
+  }
+
+  Note: 'Uma carta por rodada; unicidade impede repeticao no mesmo ciclo. A aplicacao so avanca o ciclo apos usar todas as cartas. Movimento e posicao sao atomicos com a avaliacao correta.'
+}
+
+Table turns {
+  id uuid [pk]
+  match_id uuid [not null]
+  round_id uuid [not null]
+  number int [not null]
+  respondent_player_id uuid [not null]
+  status turn_status [not null, default: 'OPEN']
+  action turn_action
+  bot_draw numeric(10,9)
+  bot_hit boolean
+  started_at timestamptz [not null]
+  finished_at timestamptz
+
+  indexes {
+    (round_id, id) [unique]
+    (round_id, number) [unique]
+  }
+
+  checks {
+    `number > 0` [name: 'turns_number_positive']
+    `bot_draw IS NULL OR (bot_draw >= 0 AND bot_draw < 1)` [name: 'turns_bot_draw_range']
+  }
+
+  Note: 'Cada turno admite no maximo uma resposta. Sorteio, acao e resultado do bot sao definitivos e devem sobreviver a reenvio ou reinicio.'
+}
+
+Table round_revealed_hints {
+  round_id uuid [not null]
+  snapshot_hint_id uuid [not null]
+  turn_id uuid [not null]
+  reveal_order int [not null]
+  revealed_at timestamptz [not null]
+
+  indexes {
+    (round_id, snapshot_hint_id) [pk]
+    (round_id, reveal_order) [unique]
+    turn_id [unique]
+  }
+
+  Note: 'No maximo uma dica adicional por turno. A aplicacao garante que a dica pertence a carta da rodada; R = quantidade de linhas da rodada.'
+}
+
+Table round_answer_key_viewers {
+  match_id uuid [not null]
+  round_id uuid [not null]
+  player_id uuid [not null]
+  shown_at timestamptz [not null]
+
+  indexes {
+    (round_id, player_id) [pk]
+  }
+
+  Note: 'Todo humano que recebeu gabarito como juiz fica inelegivel para responder a carta, mesmo apos substituicao.'
+}
+
+Table turn_answers {
+  turn_id uuid [pk]
+  content text [not null]
+  submitted_at timestamptz [not null]
+
+  Note: 'Uma resposta por turno; o mesmo jogador pode responder novamente em outro turno da rodada.'
+}
+
+Table answer_evaluations {
+  answer_turn_id uuid [pk]
+  source evaluation_source [not null]
+  result evaluation_result [not null]
+  evaluator_player_id uuid
+  ai_provider text
+  evaluated_at timestamptz [not null]
+
+  Note: 'Resultado definitivo. BOT_DRAW nao usa juiz nem IA. Resposta de bot removido enquanto pendente e descartada sem avaliacao concluida.'
+}
+
+Table match_timers {
+  id uuid [pk]
+  match_id uuid [not null]
+  kind timer_kind [not null]
+  scope_id uuid [not null]
+  remaining_ms bigint [not null]
+  due_at timestamptz
+  checkpointed_at timestamptz [not null]
+  is_paused boolean [not null, default: false]
+
+  indexes {
+    (match_id, kind, scope_id) [unique]
+  }
+
+  checks {
+    `remaining_ms >= 0` [name: 'match_timers_remaining_nonnegative']
+  }
+
+  Note: 'scope_id = match_id para fases/lobby, player_id para RECONNECT, turn_id para TURN/BOT_ACTION, answer turn_id para JUDGE/AI. remaining_ms e o checkpoint duravel; indisponibilidade do backend nao consome tempo.'
+}
+
+// ============================================================
+// CHAVES E RELACIONAMENTOS
+// ============================================================
+
+Ref: users.id < decks.owner_id
+Ref: decks.id < cards.deck_id [delete: cascade]
+Ref: cards.id < card_hints.card_id [delete: cascade]
+Ref: users.id < boards.owner_id
+
+Ref: matches.id < match_players.match_id
+Ref: users.id < match_players.user_id
+Ref: match_players.(match_id, id) < matches.(id, winner_player_id)
+
+Ref: matches.id - match_runtime.match_id
+Ref: decks.id < match_runtime.selected_deck_id [delete: set null]
+Ref: boards.id < match_runtime.selected_board_id [delete: set null]
+Ref: match_players.(match_id, id) < match_runtime.(match_id, host_player_id)
+Ref: match_players.(match_id, id) < match_player_runtime.(match_id, player_id)
+Ref: match_players.(match_id, id) < human_presence_claims.(match_id, player_id)
+
+Ref: matches.id - match_snapshots.match_id
+Ref: match_snapshots.match_id < match_snapshot_cards.match_id
+Ref: match_snapshot_cards.id < match_snapshot_hints.snapshot_card_id
+
+Ref: matches.id < rounds.match_id
+Ref: match_snapshot_cards.(match_id, id) < rounds.(match_id, snapshot_card_id)
+Ref: match_players.(match_id, id) < rounds.(match_id, initiator_player_id)
+Ref: match_players.(match_id, id) < rounds.(match_id, current_judge_player_id)
+Ref: match_players.(match_id, id) < rounds.(match_id, moved_player_id)
+Ref: rounds.(match_id, id) < turns.(match_id, round_id)
+Ref: match_players.(match_id, id) < turns.(match_id, respondent_player_id)
+
+Ref: rounds.id < round_revealed_hints.round_id
+Ref: match_snapshot_hints.id < round_revealed_hints.snapshot_hint_id
+Ref: turns.(round_id, id) < round_revealed_hints.(round_id, turn_id)
+Ref: rounds.(match_id, id) < round_answer_key_viewers.(match_id, round_id)
+Ref: match_players.(match_id, id) < round_answer_key_viewers.(match_id, player_id)
+
+Ref: turns.id - turn_answers.turn_id
+Ref: turn_answers.turn_id - answer_evaluations.answer_turn_id
+Ref: match_players.id < answer_evaluations.evaluator_player_id
+Ref: matches.id < match_timers.match_id
+
+// Regras nao expressas por FK ou indice simples: validacao de origem/visibilidade
+// do tabuleiro; identidade exclusiva por tipo; limites de cartas/dicas/vagas;
+// nome normalizado; igualdade de partida nos vinculos indiretos; elegibilidade
+// do juiz/respondente; tempos permitidos; transicoes, sigilo e limpeza terminal.
