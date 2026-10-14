@@ -113,14 +113,30 @@ Enum timer_kind {
 // CONTEUDO EDITAVEL
 // ============================================================
 
+Table profile_photos {
+  id uuid [pk]
+  asset_key text [not null, unique]
+  is_active boolean [not null, default: true]
+  is_default boolean [not null, default: false]
+  created_at timestamptz [not null]
+  updated_at timestamptz [not null]
+
+  checks {
+    `NOT is_default OR is_active` [name: 'profile_photos_default_active']
+  }
+
+  Note: 'Catalogo controlado pelo sistema. asset_key identifica ativo interno, nunca upload, URL ou dados de imagem do cliente. A migration deve criar indice unico parcial para is_default = true; a foto padrao nao pode ser desativada nem excluida.'
+}
+
 Table users {
   id uuid [pk]
   email text [not null, unique]
   password_hash text [not null]
+  profile_photo_id uuid [not null]
   created_at timestamptz [not null]
   updated_at timestamptz [not null]
 
-  Note: 'Cadastro nao cria sessao. Credenciais de sessao sao temporarias no Redis.'
+  Note: 'Cadastro nao cria sessao. profile_photo_id sempre referencia foto ativa; quando nao houver escolha, recebe a foto padrao. Credenciais de sessao sao temporarias no Redis.'
 }
 
 Table decks {
@@ -507,6 +523,7 @@ Table match_timers {
 // CHAVES E RELACIONAMENTOS
 // ============================================================
 
+Ref: profile_photos.id < users.profile_photo_id [delete: restrict]
 Ref: users.id < decks.owner_id
 Ref: decks.id < cards.deck_id [delete: cascade]
 Ref: cards.id < card_hints.card_id [delete: cascade]
@@ -546,7 +563,11 @@ Ref: turn_answers.turn_id - answer_evaluations.answer_turn_id
 Ref: match_players.id < answer_evaluations.evaluator_player_id
 Ref: matches.id < match_timers.match_id
 
-// Regras nao expressas por FK ou indice simples: validacao de origem/visibilidade
-// do tabuleiro; identidade exclusiva por tipo; limites de cartas/dicas/vagas;
-// nome normalizado; igualdade de partida nos vinculos indiretos; elegibilidade
-// do juiz/respondente; tempos permitidos; transicoes, sigilo e limpeza terminal.
+// Regras nao expressas por FK ou indice simples: indice unico parcial para haver
+// exatamente uma profile_photos.is_default = true; semear essa foto e atribui-la
+// a usuarios existentes antes de exigir profile_photo_id; trocar em transacao as
+// referencias para a foto padrao ao desativar outra foto; validacao de
+// origem/visibilidade do tabuleiro; identidade exclusiva por tipo; limites de
+// cartas/dicas/vagas; nome normalizado; igualdade de partida nos vinculos
+// indiretos; elegibilidade do juiz/respondente; tempos permitidos; transicoes,
+// sigilo e limpeza terminal.
