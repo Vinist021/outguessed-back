@@ -388,7 +388,19 @@ Motivos conceituais de encerramento da rodada:
 
   
 
-Uma conta é criada com e-mail e senha válidos. O e-mail é obrigatório e único no sistema.
+Uma conta é criada com e-mail e senha válidos. O e-mail é obrigatório e único no sistema. A escolha de uma foto de perfil é opcional no cadastro: quando não for escolhida uma foto válida do catálogo do sistema, a conta recebe a foto padrão.
+
+**RN-007A — Catálogo de fotos de perfil**
+
+O sistema mantém um catálogo controlado de fotos de perfil pré-definidas. Cada foto possui identificador próprio e estado ativo ou inativo; a foto padrão deve ser uma opção válida do catálogo. O cliente somente pode indicar o identificador de uma foto ativa. Não são aceitos upload de arquivo, URL nem dados arbitrários de imagem.
+
+**RN-007B — Alteração de foto de perfil**
+
+Um usuário autenticado pode alterar somente a foto de perfil da própria conta, escolhendo uma foto ativa do catálogo. O backend deve validar a opção selecionada e persistir a alteração.
+
+**RN-007C — Desativação de foto de perfil**
+
+Uma foto inativa não pode ser selecionada em novos cadastros nem na alteração de dados da conta. Quando uma foto for desativada, todas as contas que a utilizam passam a usar a foto padrão.
 
   
 
