@@ -388,7 +388,7 @@ Motivos conceituais de encerramento da rodada:
 
   
 
-Uma conta é criada com e-mail e senha válidos. O e-mail é obrigatório e único no sistema. A escolha de uma foto de perfil é opcional no cadastro: quando não for escolhida uma foto válida do catálogo do sistema, a conta recebe a foto padrão.
+Uma conta é criada com e-mail, senha e apelido válidos. E-mail e apelido são obrigatórios e únicos no sistema. A escolha de uma foto de perfil é opcional no cadastro: quando não for escolhida uma foto válida do catálogo do sistema, a conta recebe a foto padrão.
 
 **RN-007A — Catálogo de fotos de perfil**
 
@@ -401,6 +401,10 @@ Um usuário autenticado pode alterar somente a foto de perfil da própria conta,
 **RN-007C — Desativação de foto de perfil**
 
 Uma foto inativa não pode ser selecionada em novos cadastros nem na alteração de dados da conta. Ao desativar uma foto que não seja a padrão, o backend deve transferir todas as contas que a utilizam para a foto padrão na mesma transação.
+
+**RN-007D — Apelido da conta**
+
+O usuário cadastrado define o apelido ao criar a conta. Esse apelido é fixo: não pode ser alterado depois do cadastro nem substituído ao criar ou entrar em partidas. A unicidade entre contas ignora caixa, acentos e espaços excedentes, conforme a normalização da RN-013. Apelidos de contas cadastradas ficam reservados como nomes de exibição de convidados: o convidado pode informá-los como nome solicitado, mas recebe um nome diferente conforme a RN-013.
 
   
 
@@ -444,7 +448,7 @@ Sessões autenticadas expiram após 7 dias e sessões de convidado após 24 hora
 
   
 
-Um convidado recebe identificador temporário próprio e escolhe um nome de exibição ao entrar em uma partida.
+Um convidado recebe identificador temporário próprio e informa o nome que deseja exibir ao entrar em uma partida. O nome atribuído segue a RN-013 e não é um apelido de conta.
 
   
 
@@ -452,7 +456,11 @@ Um convidado recebe identificador temporário próprio e escolhe um nome de exib
 
   
 
-O nome de exibição deve ser único entre todos os participantes da partida, sejam usuários, convidados ou bots. A comparação ignora caixa, acentos e espaços excedentes. Um usuário cadastrado deve escolher outro nome para a partida se houver conflito.
+O nome de exibição deve ser único entre todos os participantes da partida, sejam usuários, convidados ou bots. A comparação ignora caixa, acentos e espaços excedentes. Para um usuário cadastrado, o nome de exibição é sempre o apelido fixo da conta, inclusive ao criar uma partida ou retornar a ela; o cliente não pode informar outro nome.
+
+O convidado pode solicitar um nome igual ao apelido de qualquer conta cadastrada, esteja ela ou não na partida, ou ao nome de outro participante, inclusive bot. Se o nome solicitado não estiver reservado nem ocupado na partida, ele é usado sem alteração. Caso contrário, o sistema acrescenta `(1)`, `(2)` e assim por diante ao nome solicitado, tratado como base literal, e atribui o menor sufixo positivo cujo resultado não esteja reservado nem ocupado. A mesma comparação normalizada vale para o nome solicitado e para cada resultado com sufixo.
+
+Se um usuário entrar ou retornar com seu apelido fixo e um convidado ou bot já exibir esse nome na partida, o sistema atribui ao ocupante o menor sufixo positivo livre, usando seu nome exibido até então como base literal e verificando a mesma reserva e ocupação, antes de concluir a entrada do usuário. A mudança afeta apenas o nome exibido, não a identidade do convidado ou do bot. A criação posterior de uma conta com apelido igual ao nome já atribuído a um convidado não renomeia esse convidado por si só; se o titular entrar nessa partida, aplica-se o ajuste acima.
 
   
 
@@ -764,7 +772,7 @@ Uma identidade não pode ocupar simultaneamente duas posições na mesma partida
 
   
 
-A entrada somente é concluída depois de validar a unicidade normalizada do nome de exibição, inclusive contra os nomes visíveis dos bots.
+A entrada somente é concluída depois de atribuir ou ajustar os nomes conforme a RN-013 e validar sua unicidade normalizada, inclusive contra os nomes visíveis dos bots. O backend obtém o apelido do usuário cadastrado da própria conta; somente o convidado informa o nome solicitado para a partida.
 
   
 
@@ -1696,7 +1704,7 @@ Um convidado pode consultar o resultado somente enquanto sua sessão temporária
 
 **RN-132 — Identidade do bot**
 
-Cada bot tem identificador próprio, tipo de participante explicitamente identificado como bot e nome visível único na partida, atribuído pelo backend como `Bot 1`, `Bot 2` e assim por diante, pulando nomes já usados na partida segundo a normalização da RN-013. Nomes de bots removidos não são reutilizados na mesma partida. Bot não possui conta, sessão, presença humana, conexão, chat, prontidão manual nem poderes de anfitrião ou juiz. Somente o backend executa suas ações.
+Cada bot tem identificador próprio, tipo de participante explicitamente identificado como bot e nome visível único na partida, atribuído inicialmente pelo backend como `Bot 1`, `Bot 2` e assim por diante, pulando nomes já usados na partida segundo a normalização da RN-013. Se um usuário entrar com apelido fixo igual ao nome visível de um bot, o bot recebe o primeiro sufixo livre conforme a RN-013, sem mudar sua identidade. Nomes de bots removidos não são reutilizados na mesma partida. Bot não possui conta, sessão, presença humana, conexão, chat, prontidão manual nem poderes de anfitrião ou juiz. Somente o backend executa suas ações.
 
 **RN-133 — Inclusão manual no lobby**
 
