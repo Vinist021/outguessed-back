@@ -1,0 +1,106 @@
+@startchen
+' DER conceitual do fluxo principal do OutGuessed.
+' Ao iniciar a partida, deck, cartas e tabuleiro selecionados são congelados
+' em um snapshot imutável. As relações abaixo representam esse uso conceitual.
+' Jogador representa o participante de uma partida; a casa ocupada deve pertencer
+' ao tabuleiro utilizado nessa partida. Vários jogadores podem ocupar a mesma casa.
+' Casa inclui a posição inicial (número zero) e as casas de progresso.
+left to right direction
+' Limite para impressão em uma folha A4 horizontal, com margens.
+scale max 1000*680
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam nodesep 18
+skinparam ranksep 12
+
+entity "Deck" as DECK {
+  id <<key>>
+  nome
+}
+
+entity "Carta" as CARTA {
+  id <<key>>
+  dica
+  gabarito
+}
+
+entity "Tabuleiro" as TABULEIRO {
+  id <<key>>
+}
+
+entity "Casa" as CASA {
+  id <<key>>
+  número
+}
+
+entity "Partida" as PARTIDA {
+  id <<key>>
+  estado
+}
+
+entity "Jogador" as JOGADOR {
+  id <<key>>
+  nome
+}
+
+entity "Rodada" as RODADA {
+  id <<key>>
+  número
+}
+
+entity "Turno" as TURNO {
+  id <<key>>
+  palpite
+  resultado
+}
+
+relationship "contém" as CONTEM {
+}
+DECK -1- CONTEM
+CONTEM -N- CARTA
+
+relationship "contém" as CONTEM_CASA {
+}
+TABULEIRO -1- CONTEM_CASA
+CONTEM_CASA -N- CASA
+
+relationship "seleciona" as SELECIONA_DECK {
+}
+PARTIDA -N- SELECIONA_DECK
+SELECIONA_DECK -1- DECK
+
+relationship "utiliza" as UTILIZA_TABULEIRO {
+}
+PARTIDA -N- UTILIZA_TABULEIRO
+UTILIZA_TABULEIRO -1- TABULEIRO
+
+relationship "reúne" as REUNE {
+}
+PARTIDA -1- REUNE
+REUNE -N- JOGADOR
+
+relationship "ocupa" as OCUPA_CASA {
+}
+JOGADOR -N- OCUPA_CASA
+OCUPA_CASA -1- CASA
+
+relationship "possui" as POSSUI_RODADA {
+}
+PARTIDA -1- POSSUI_RODADA
+POSSUI_RODADA -N- RODADA
+
+relationship "usa" as USA_CARTA {
+}
+RODADA -N- USA_CARTA
+USA_CARTA -1- CARTA
+
+relationship "possui" as POSSUI_TURNO {
+}
+RODADA -1- POSSUI_TURNO
+POSSUI_TURNO -N- TURNO
+
+relationship "realiza" as REALIZA {
+}
+JOGADOR -1- REALIZA
+REALIZA -N- TURNO
+@endchen

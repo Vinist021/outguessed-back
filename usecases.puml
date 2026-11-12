@@ -1,0 +1,59 @@
+@startuml
+' Usa o mesmo mecanismo de layout nas diferentes prévias do PlantUML.
+!pragma layout smetana
+left to right direction
+
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 10
+skinparam nodesep 24
+skinparam ranksep 30
+skinparam backgroundColor White
+skinparam ArrowColor #444444
+skinparam actorBorderColor #777777
+skinparam actorBackgroundColor White
+skinparam usecaseBorderColor #777777
+skinparam usecaseBackgroundColor #F5F5F5
+skinparam rectangleBorderColor #444444
+skinparam rectangleBackgroundColor White
+skinparam noteBorderColor #888866
+skinparam noteBackgroundColor #FFFFE0
+
+actor "Jogador humano\n(usuário ou convidado)" as Jogador
+actor "Anfitrião" as Anfitriao
+
+rectangle {
+  usecase "Cadastrar conta" as CadastrarConta
+  usecase "Fazer login" as FazerLogin
+  usecase "Entrar em sala" as EntrarSala
+  usecase "Marcar-se pronto" as MarcarPronto
+  usecase "Entrar em partida em andamento" as EntrarPartida
+  usecase "Jogar turno" as JogarTurno
+  usecase "Adicionar ou\nremover bots" as GerenciarBots
+  usecase "Iniciar partida" as IniciarPartida
+
+  EntrarSala <.. MarcarPronto : <<extend>>
+
+  ' Cadastro, login e entrada em sala ocupam as três primeiras linhas.
+  ' A extensão fica à direita de Entrar em sala, na terceira linha.
+  CadastrarConta -[hidden]left-> FazerLogin
+  FazerLogin -[hidden]left-> EntrarSala
+  EntrarSala -[hidden]left-> EntrarPartida
+  EntrarPartida -[hidden]left-> JogarTurno
+  JogarTurno -[hidden]left-> GerenciarBots
+  GerenciarBots -[hidden]left-> IniciarPartida
+}
+
+' A herança e a ligação mais longa mantêm o anfitrião à esquerda do jogador.
+Anfitriao --|> Jogador
+
+Jogador -- CadastrarConta
+Anfitriao --- GerenciarBots
+
+Jogador -- FazerLogin
+Jogador -- EntrarSala
+Jogador -- EntrarPartida
+Jogador -- JogarTurno
+
+Anfitriao -[norank]- IniciarPartida
+@enduml

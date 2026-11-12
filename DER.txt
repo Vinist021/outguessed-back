@@ -132,11 +132,12 @@ Table users {
   id uuid [pk]
   email text [not null, unique]
   password_hash text [not null]
+  nickname text [not null]
   profile_photo_id uuid [not null]
   created_at timestamptz [not null]
   updated_at timestamptz [not null]
 
-  Note: 'Cadastro nao cria sessao. profile_photo_id sempre referencia foto ativa; quando nao houver escolha, recebe a foto padrao. Credenciais de sessao sao temporarias no Redis.'
+  Note: 'Cadastro nao cria sessao. Apelido obrigatorio e imutavel; 
 }
 
 Table decks {
@@ -269,7 +270,7 @@ Table match_players {
     `(kind = 'USER' AND user_id IS NOT NULL AND guest_identity_id IS NULL AND bot_number IS NULL) OR (kind = 'GUEST' AND user_id IS NULL AND guest_identity_id IS NOT NULL AND bot_number IS NULL) OR (kind = 'BOT' AND user_id IS NULL AND guest_identity_id IS NULL AND bot_number IS NOT NULL AND bot_number > 0)` [name: 'match_players_identity_kind']
   }
 
-  Note: 'Exatamente uma identidade conforme kind. guest_identity_id identifica sessao temporaria validada no Redis, sem FK. Remover bots REMOVED no encerramento.'
+  Note: 'Exatamente uma identidade conforme kind. USER usa o apelido fixo da conta como display_name; GUEST escolhe nome disponivel sem usar apelido reservado. guest_identity_id identifica sessao temporaria validada no Redis, sem FK. Remover bots REMOVED no encerramento.'
 }
 
 // ============================================================
