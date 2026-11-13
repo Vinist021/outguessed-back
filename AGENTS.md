@@ -3,7 +3,6 @@
 ## Fonte de verdade e escopo
 
 - Leia `rules.md` antes de alterar comportamento do jogo. Ele é normativo; este guia orienta a implementação e não cria regras de negócio.
-- O repositório ainda não contém código Go nem contratos HTTP/WebSocket, esquema SQL ou mecanismo de sessão definidos. Verifique o que já existe antes de criar estrutura, comandos ou convenções.
 - Implemente um monólito modular em Go. Prefira a menor solução que preserve as regras e permita testes; não antecipe microserviços, filas, Kubernetes ou coordenação distribuída.
 
 ## Organização e responsabilidades

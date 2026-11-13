@@ -5,6 +5,15 @@ node_modules/
 dist/
 build/
 
+# Go
+/bin/
+/api
+/api.exe
+*.test
+*.test.exe
+coverage.out
+coverage.html
+
 # TypeScript incremental build
 *.tsbuildinfo
 
