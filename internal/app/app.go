@@ -14,7 +14,6 @@ import (
 
 const shutdownTimeout = 10 * time.Second
 
-// Run inicia a API e aguarda uma falha ou o cancelamento do contexto.
 func Run(ctx context.Context, addr string, logger *slog.Logger) error {
 	if ctx.Err() != nil {
 		return nil
