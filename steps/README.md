@@ -3,12 +3,12 @@
 ## Estado atual
 
 - **Planejamento:** documentado nesta pasta.
-- **Implementação:** etapas 01 a 04 concluídas. Validação final em andamento.
-- **Etapa atual:** [05 — Validação e documentação](05-validacao-documentacao.md).
-- **Próximo marco:** aceite da etapa 05 após execução local e aprovação da CI.
-- **Etapas de implementação concluídas:** 4 de 5.
-- **Verificações da aplicação:** testes com detector de corridas, build, análise estática e formatação aprovados. Contratos de saúde, Problem Details, correlação e CORS verificados. A integração real de persistência foi validada na etapa 03.
-- **Verificações de infraestrutura:** Compose e OpenAPI válidos. A migration `1` foi confirmada no PostgreSQL de desenvolvimento e os dois endpoints foram executados no Swagger UI. O rollback no banco descartável e a geração SQL reproduzível constam no aceite da etapa 03.
+- **Implementação:** fundação implementada e validada.
+- **Última etapa:** [05 — Validação e documentação](05-validacao-documentacao.md), concluída em 19/11/2026.
+- **Próxima etapa:** nenhuma nesta entrega.
+- **Etapas de implementação concluídas:** 5 de 5.
+- **Verificações da aplicação:** testes com detector de corridas, build, análise estática e formatação aprovados. Contratos OpenAPI, CORS e os dois endpoints pelo Swagger UI verificados.
+- **Verificações de infraestrutura:** geração SQL reproduzível, migrations, recuperação da prontidão, persistência PostgreSQL e descarte Redis confirmados em checkout limpo e na CI. [Execução aprovada](https://github.com/Vinist021/outguessed-back/actions/runs/44639390072)
 
 Estes documentos registram o planejamento e sua execução. A existência de um documento não significa que sua implementação ou seus testes foram concluídos. Os checklists são marcados somente conforme as evidências de cada etapa.
 
@@ -22,7 +22,7 @@ Executar as etapas na ordem abaixo. Iniciar uma etapa somente depois de concluir
 | 02 | [Serviços locais](02-servicos-locais.md) | Etapa 01 concluída | Concluída | Nenhuma nesta etapa; Swagger preparado para o OpenAPI da etapa 04 |
 | 03 | [Configuração e persistência](03-configuracao-persistencia.md) | Etapa 02 concluída | Concluída | Nenhuma nesta etapa; serviço de prontidão preparado para os contratos HTTP da etapa 04 |
 | 04 | [Contratos HTTP](04-contratos-http.md) | Etapa 03 concluída | Concluída | Nenhuma nesta etapa. Saúde, erros, CORS e Swagger UI validados |
-| 05 | [Validação e documentação](05-validacao-documentacao.md) | Etapa 04 concluída | Em andamento | Testes completos, CI, README principal e aceite final |
+| 05 | [Validação e documentação](05-validacao-documentacao.md) | Etapa 04 concluída | Concluída | Nenhuma nesta entrega |
 
 ## Objetivo e decisões gerais
 
@@ -64,12 +64,12 @@ Não marcar uma etapa como concluída porque seu código foi escrito ou porque u
 
 A execução inicial da etapa 01 encontrou um bloqueio confirmado do Controle de Aplicativo do Windows na execução de `httpapi.test.exe`. O bloqueio persistiu com permissão ampliada e com o diretório temporário padrão do Go; os eventos de integridade de código do Windows confirmaram a exigência de assinatura. Esse registro é histórico: a pendência de aceite foi atendida em 13/11/2026 com `go test -count=1 -v ./...` aprovado em todos os pacotes em Linux com Go 1.27.1. A política do Windows não foi alterada nem revalidada.
 
-O ambiente isolado restringe o socket Docker e a abertura de conexões locais. As verificações das etapas 02 a 04 que exigiam esses recursos ocorreram fora do isolamento. Como a porta `5432` está ocupada pelo PostgreSQL instalado no Linux, a validação de desenvolvimento usou `POSTGRES_PORT=5434`.
+O ambiente isolado restringe o socket Docker e a abertura de conexões locais. As verificações das etapas 02 a 05 que exigiam esses recursos ocorreram fora do isolamento. Nas etapas anteriores, a validação de desenvolvimento usou `POSTGRES_PORT=5434` porque o PostgreSQL instalado ocupa `5432`. A etapa 05 usou portas isoladas alocadas pelo Docker.
 
 | Etapa afetada | Impedimento | Condição para resolver | Situação |
 | --- | --- | --- | --- |
 | 01 | Histórico: Windows impediu a execução de `httpapi.test.exe` por política de integridade de código | Executar `go test ./...` em ambiente que permita os binários de teste e obter sucesso em todos os pacotes | Condição de aceite atendida em Linux em 13/11/2026; política do Windows não revalidada |
-| 02 a 05 | Acesso ao daemon Docker restrito no ambiente isolado | Consultar o daemon e iniciar os serviços necessários fora do isolamento | Acesso confirmado nas etapas 02 a 04. A etapa 05 requer acesso para validar os serviços descartáveis |
+| 02 a 05 | Acesso ao daemon Docker restrito no ambiente isolado | Consultar o daemon e iniciar os serviços necessários fora do isolamento | Acesso confirmado e verificações concluídas em todas as etapas afetadas |
 
 ## Evidências de conclusão
 
@@ -81,7 +81,7 @@ Registrar data, referência de código quando houver, comandos executados, resul
 | 02 | 17/11/2026 | `compose.yaml` e marcador `db/migrations/.gitkeep`; alterações locais sem commit | Compose padrão e todos os perfis válidos; quatro serviços saudáveis; conexões PostgreSQL autenticadas, `PONG` Redis, isolamento, montagens e loopback conferidos; sqlc 1.31.1 e ambos os migrate 4.20.1 executados; revisão e `git diff --check` aprovados. [Registro completo](02-servicos-locais.md#registro-de-execução). | Nenhuma nesta etapa; etapa 03 disponível para início |
 | 03 | 17/11/2026 | Configuração, migrations, sqlc, clientes e testes; alterações locais sem commit | Migration `1` limpa em desenvolvimento e teste; rollback/reaplicação e proteção de dependentes aprovados; geração SQL reproduzível; build, vet, dependências, testes e detector de corridas aprovados; executável recusou inicializações inválidas sem HTTP e encerrou por SIGTERM com logs JSON sanitizados. [Registro completo](03-configuracao-persistencia.md#registro-de-execução). | Nenhuma nesta etapa; etapa 04 disponível para início |
 | 04 | 19/11/2026 | Roteador HTTP, testes e `docs/openapi.yaml` em alterações locais | Testes com detector de corridas, requisições HTTP locais, logs sanitizados, CORS e validação OpenAPI aprovados. Ambos os endpoints responderam 200 no Swagger UI. [Registro completo](04-contratos-http.md#registro-de-execução). | Nenhuma nesta etapa. Etapa 05 disponível para início |
-| 05 | — | — | Implementação em andamento | Execução local e aprovação da CI |
+| 05 | 19/11/2026 | Commit `5d7105f` | Testes com detector de corridas, geração SQL, migrations, recuperação, persistência e Swagger UI validados em checkout limpo. CI aprovada. [Registro completo](05-validacao-documentacao.md#registro-de-execução-e-aceite-final) · [Execução da CI](https://github.com/Vinist021/outguessed-back/actions/runs/44639390072) | Nenhuma nesta entrega |
 
 ## Navegação
 

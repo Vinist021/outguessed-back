@@ -72,17 +72,17 @@ Explicar a diferença entre parar containers e remover o volume PostgreSQL, entr
 
 ## Checklist de implementação
 
-- [ ] Implementar testes de configuração e de contratos HTTP.
-- [ ] Implementar integração com migrations, consulta gerada e Redis reais.
-- [ ] Implementar cenários de falha, recuperação e encerramento.
-- [ ] Validar persistência PostgreSQL e descarte Redis sem afetar dados do usuário.
-- [ ] Validar OpenAPI e compatibilidade das respostas.
-- [ ] Criar o workflow GitHub Actions com geração SQL e detector de corridas no Linux.
-- [ ] Garantir isolamento e limpeza dos recursos usados pela CI.
-- [ ] Atualizar o README principal com os comandos efetivamente disponíveis.
-- [ ] Executar o fluxo completo em checkout limpo ou ambiente equivalente sem saídas de build e configuração local preexistentes.
-- [ ] Confirmar execução aprovada da CI e revisar o diff final.
-- [ ] Registrar evidências e concluir o [controle de progresso](README.md).
+- [x] Implementar testes de configuração e de contratos HTTP.
+- [x] Implementar integração com migrations, consulta gerada e Redis reais.
+- [x] Implementar cenários de falha, recuperação e encerramento.
+- [x] Validar persistência PostgreSQL e descarte Redis sem afetar dados do usuário.
+- [x] Validar OpenAPI e compatibilidade das respostas.
+- [x] Criar o workflow GitHub Actions com geração SQL e detector de corridas no Linux.
+- [x] Garantir isolamento e limpeza dos recursos usados pela CI.
+- [x] Atualizar o README principal com os comandos efetivamente disponíveis.
+- [x] Executar o fluxo completo em checkout limpo ou ambiente equivalente sem saídas de build e configuração local preexistentes.
+- [x] Confirmar execução aprovada da CI e revisar o diff final.
+- [x] Registrar evidências e concluir o [controle de progresso](README.md).
 
 ## Entregáveis
 
@@ -124,9 +124,23 @@ Concluir somente quando o fluxo documentado funcionar a partir de checkout limpo
 
 ## Registro de execução e aceite final
 
-**Ainda não executada.** Registrar a referência do código validado, o resultado dos comandos, o endereço da execução da CI e eventuais limitações. Não declarar aprovado o que não foi executado.
+**Concluída em 19/11/2026 (America/Sao_Paulo)** — validação local e GitHub Actions aprovados.
 
-Ao concluir, marcar a etapa 05 e as anteriores como concluídas apenas se suas evidências continuarem válidas. Atualizar o controle para “fundação implementada e validada”, com 5 de 5 etapas concluídas e nenhuma próxima etapa nesta entrega. Funcionalidades de negócio exigirão novo planejamento.
+**Referência** — commit `5d7105f` na branch `validation/foundation-stage-05`. O fluxo local foi executado em Linux/amd64 com Go 1.27.1, GCC 15.2, Docker Engine 29.9.3 e Docker Compose 5.7.0, a partir de checkout temporário sem `.env` e com cache de build novo. As verificações que usam Docker ou conexões locais foram executadas com acesso fora do isolamento. [Execução da CI](https://github.com/Vinist021/outguessed-back/actions/runs/44639390072)
+
+| Verificação | Resultado observado |
+| --- | --- |
+| `gofmt -l .`, `go mod verify`, `go mod tidy -diff`, `go vet ./...`, `go vet -tags=integration ./...`, `go build ./...` e `git diff --check` | Aprovadas. Formatação, dependências e árvore de trabalho conferidas. |
+| `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./...` | Compilação cruzada para Windows aprovada. |
+| `go test -count=1 ./...` e `go test -race -count=1 ./...` | Aprovados, incluindo configuração, CORS, correlação, encerramento e validação OpenAPI dos contratos HTTP 200, 404, 405, 500 e 503. |
+| `bash scripts/verify-foundation.sh` | SQL reproduzível. Migration aplicada em banco vazio, reaplicada sem pendências, revertida e reaplicada com `dirty=false`. A suíte `go test -race -count=1 -tags=integration ./...` passou com PostgreSQL e Redis reais. |
+| Falha e recuperação | Cada dependência de teste foi pausada isoladamente. A vivacidade respondeu 200, a prontidão passou para 503 e voltou a 200 após a restauração, no mesmo processo. A API encerrou por SIGTERM. |
+| Persistência e descarte | Os IDs dos dois containers mudaram após a recriação. O banco descartável reteve o marcador PostgreSQL e o Redis descartou a chave. O banco, os containers, as redes e os volumes de verificação foram removidos. |
+| Falhas esperadas e limpeza | Sem cada variável obrigatória de integração, a suíte falhou com diagnóstico específico. Um arquivo novo e ignorado pelo Git no diretório gerado também foi detectado. O projeto descartável foi removido após a falha. |
+| README e Swagger UI | Os serviços saudáveis e a migration `1` foram confirmados em um segundo checkout com `.env` derivado do exemplo e portas isoladas. No Chrome, **Try it out** retornou 200 para os dois endpoints, com corpo JSON e `X-Request-ID`. |
+| GitHub Actions | Formatação, dependências, compilação, contratos HTTP, geração SQL, integração real, recuperação, persistência e árvore limpa aprovadas no runner Ubuntu. [Execução aprovada](https://github.com/Vinist021/outguessed-back/actions/runs/44639390072) |
+
+**Aceite final** — fundação implementada e validada, com 5 de 5 etapas concluídas. Funcionalidades de negócio exigirão novo planejamento.
 
 ## Navegação
 
