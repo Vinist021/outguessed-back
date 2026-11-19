@@ -51,7 +51,7 @@ services:
       - -path
       - /migrations
       - -database
-      - postgres://outguessed:outguessed_local@postgres:5432/outguessed?sslmode=disable
+      - postgres://outguessed:outguessed_local@postgres:5432/outguessed?sslmode=disable&search_path=public
     volumes:
       - type: bind
         source: ./db/migrations
@@ -119,7 +119,7 @@ services:
       - -path
       - /migrations
       - -database
-      - postgres://outguessed_test:outguessed_test_local@postgres-test:5432/outguessed_test?sslmode=disable
+      - postgres://outguessed_test:outguessed_test_local@postgres-test:5432/outguessed_test?sslmode=disable&search_path=public
     volumes:
       - type: bind
         source: ./db/migrations
