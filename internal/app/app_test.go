@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,12 +44,14 @@ func TestServeCancellationClosesListener(t *testing.T) {
 	t.Cleanup(func() { listener.Close() })
 
 	ctx, cancel := context.WithCancel(context.Background())
-	server := &http.Server{Handler: httpapi.NewRouter()}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	readiness := testReadiness()
+	router := httpapi.NewRouter(readiness.Check, logger, nil)
+	server := &http.Server{Handler: router}
 	finished := make(chan struct{})
 	var runErr error
 	go func() {
-		runErr = serve(ctx, server, listener, testReadiness(), time.Second, logger)
+		runErr = serve(ctx, server, listener, readiness, time.Second, logger, router)
 		close(finished)
 	}()
 	t.Cleanup(func() {
@@ -129,7 +133,9 @@ func TestServeDrainsActiveRequests(t *testing.T) {
 	server.RegisterOnShutdown(func() { close(draining) })
 	readiness := testReadiness()
 	finished := make(chan error, 1)
-	go func() { finished <- serve(ctx, server, listener, readiness, time.Second, slog.Default()) }()
+	go func() {
+		finished <- serve(ctx, server, listener, readiness, time.Second, slog.Default(), http.NotFoundHandler())
+	}()
 	t.Cleanup(func() { cancel(); server.Close() })
 	response := make(chan error, 1)
 	go func() {
@@ -172,7 +178,9 @@ func TestServeCancelsAndWaitsForRequestsAfterDeadline(t *testing.T) {
 		close(exited)
 	})}
 	finished := make(chan error, 1)
-	go func() { finished <- serve(ctx, server, listener, testReadiness(), 20*time.Millisecond, slog.Default()) }()
+	go func() {
+		finished <- serve(ctx, server, listener, testReadiness(), 20*time.Millisecond, slog.Default(), http.NotFoundHandler())
+	}()
 	t.Cleanup(func() { cancel(); server.Close() })
 	response := make(chan struct{})
 	go func() {
@@ -199,4 +207,39 @@ func TestServeCancelsAndWaitsForRequestsAfterDeadline(t *testing.T) {
 		t.Fatal("servidor não encerrou dentro do limite")
 	}
 	<-response
+}
+
+func TestShutdownGatePreservesHealthContracts(t *testing.T) {
+	readiness := testReadiness()
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	router := httpapi.NewRouter(readiness.Check, logger, []string{"http://localhost:8081"})
+	requests := &activeRequests{
+		next: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			t.Error("requisição admitida após o início do encerramento")
+		}),
+		duringShutdown: router,
+	}
+	readiness.Stop()
+	requests.stop()
+	for _, tc := range []struct {
+		path string
+		code int
+		body string
+	}{
+		{"/health/live", http.StatusOK, `"status":"ok"`},
+		{"/health/ready", http.StatusServiceUnavailable, `"code":"SERVICE_UNAVAILABLE"`},
+	} {
+		request := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		request.Header.Set("Origin", "http://localhost:8081")
+		response := httptest.NewRecorder()
+		requests.ServeHTTP(response, request)
+		if response.Code != tc.code || !strings.Contains(response.Body.String(), tc.body) {
+			t.Errorf("%s respondeu %d %s", tc.path, response.Code, response.Body)
+		}
+		if response.Header().Get("X-Request-ID") == "" ||
+			response.Header().Get("Cache-Control") != "no-store" ||
+			response.Header().Get("Access-Control-Allow-Origin") != "http://localhost:8081" {
+			t.Errorf("cabeçalhos de %s: %v", tc.path, response.Header())
+		}
+	}
 }

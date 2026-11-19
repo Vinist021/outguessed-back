@@ -64,9 +64,10 @@ func runHTTP(ctx context.Context, cfg config.Config, readiness *health.Service, 
 		return fmt.Errorf("abrir endereço HTTP: %w", err)
 	}
 
+	router := httpapi.NewRouter(readiness.Check, logger, cfg.CORSAllowedOrigins)
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewRouter(),
+		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,
@@ -74,14 +75,14 @@ func runHTTP(ctx context.Context, cfg config.Config, readiness *health.Service, 
 		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
 	}
 
-	return serve(ctx, server, listener, readiness, cfg.ShutdownTimeout, logger)
+	return serve(ctx, server, listener, readiness, cfg.ShutdownTimeout, logger, router)
 }
 
-func serve(ctx context.Context, server *http.Server, listener net.Listener, readiness *health.Service, shutdownTimeout time.Duration, logger *slog.Logger) error {
+func serve(ctx context.Context, server *http.Server, listener net.Listener, readiness *health.Service, shutdownTimeout time.Duration, logger *slog.Logger, duringShutdown http.Handler) error {
 	workCtx, cancelWork := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancelWork()
 	server.BaseContext = func(net.Listener) context.Context { return workCtx }
-	requests := &activeRequests{next: server.Handler}
+	requests := &activeRequests{next: server.Handler, duringShutdown: duringShutdown}
 	server.Handler = requests
 	defer server.Close()
 
@@ -136,17 +137,19 @@ func serve(ctx context.Context, server *http.Server, listener net.Listener, read
 // A barreira impede novos trabalhos durante Shutdown e permite aguardar handlers
 // também após Server.Close, que por si só não aguarda seu término.
 type activeRequests struct {
-	next    http.Handler
-	mu      sync.Mutex
-	stopped bool
-	active  sync.WaitGroup
+	next           http.Handler
+	duringShutdown http.Handler
+	mu             sync.Mutex
+	stopped        bool
+	active         sync.WaitGroup
 }
 
 func (r *activeRequests) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 	r.mu.Lock()
 	if r.stopped {
 		r.mu.Unlock()
-		w.WriteHeader(http.StatusServiceUnavailable)
+		// A prontidão já foi marcada como encerrada e pode responder sem I/O.
+		r.duringShutdown.ServeHTTP(w, request)
 		return
 	}
 	r.active.Add(1)

@@ -1,0 +1,212 @@
+openapi: 3.0.3
+info:
+  title: API OutGuessed
+  version: 0.1.0
+  description: |
+    Contratos operacionais da API. A versão identifica a revisão deste documento.
+
+    Caminhos inexistentes retornam 404 com `NOT_FOUND`. Métodos incompatíveis
+    com um caminho existente retornam 405 com `METHOD_NOT_ALLOWED` e o
+    cabeçalho `Allow`.
+
+    Para origens permitidas, as respostas expõem `X-Request-ID` ao navegador.
+    Um preflight autorizado para GET responde 204, aceita `Content-Type`
+    e não autoriza credenciais.
+servers:
+  - url: http://localhost:{port}
+    description: API local
+    variables:
+      port:
+        default: '8080'
+        description: Porta configurada em HTTP_ADDR.
+tags:
+  - name: Saúde
+    description: Verificações de vivacidade e prontidão.
+paths:
+  /health/live:
+    get:
+      tags: [Saúde]
+      operationId: getLiveness
+      summary: Verificar vivacidade
+      description: Confirma que o processo HTTP está ativo sem consultar dependências.
+      responses:
+        '200':
+          $ref: '#/components/responses/Healthy'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /health/ready:
+    get:
+      tags: [Saúde]
+      operationId: getReadiness
+      summary: Verificar prontidão
+      description: Verifica a disponibilidade atual do PostgreSQL, do schema e do Redis, além do estado de encerramento da aplicação.
+      responses:
+        '200':
+          $ref: '#/components/responses/Healthy'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+components:
+  headers:
+    RequestId:
+      description: Identificador opaco gerado pelo servidor para esta requisição.
+      required: true
+      schema:
+        type: string
+        minLength: 1
+      example: identificador-exemplo
+    NoStore:
+      description: Impede o armazenamento da resposta de saúde em cache.
+      required: true
+      schema:
+        type: string
+        enum: [no-store]
+    Allow:
+      description: Métodos HTTP aceitos pelo caminho solicitado.
+      required: true
+      schema:
+        type: string
+      example: GET
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status]
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    ProblemDetails:
+      type: object
+      required: [type, title, status, detail, instance, code, requestId]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URN estável do tipo de problema.
+        title:
+          type: string
+          description: Título curto do tipo de problema em português.
+        status:
+          type: integer
+          enum: [404, 405, 500, 503]
+          description: Status HTTP da resposta.
+        detail:
+          type: string
+          description: Explicação pública sanitizada em português.
+        instance:
+          type: string
+          format: uri
+          description: URN da ocorrência no formato urn:outguessed:request:<requestId>.
+        code:
+          type: string
+          enum: [NOT_FOUND, METHOD_NOT_ALLOWED, INTERNAL_ERROR, SERVICE_UNAVAILABLE]
+          description: Código estável para tratamento pelo cliente.
+        requestId:
+          type: string
+          minLength: 1
+          description: Mesmo identificador retornado em X-Request-ID.
+        errors:
+          type: array
+          description: Lista opcional de erros de validação de campos.
+          items:
+            type: object
+            required: [field, code, message]
+            properties:
+              field:
+                type: string
+              code:
+                type: string
+              message:
+                type: string
+  responses:
+    Healthy:
+      description: Verificação de saúde bem-sucedida.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/HealthStatus'
+          example:
+            status: ok
+    NotFound:
+      description: Caminho inexistente.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: urn:outguessed:problem:not-found
+            title: Caminho não encontrado
+            status: 404
+            detail: O caminho solicitado não existe.
+            instance: urn:outguessed:request:identificador-exemplo
+            code: NOT_FOUND
+            requestId: identificador-exemplo
+    MethodNotAllowed:
+      description: Método incompatível com o caminho solicitado.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Allow:
+          $ref: '#/components/headers/Allow'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: urn:outguessed:problem:method-not-allowed
+            title: Método não permitido
+            status: 405
+            detail: O método solicitado não é permitido para este caminho.
+            instance: urn:outguessed:request:identificador-exemplo
+            code: METHOD_NOT_ALLOWED
+            requestId: identificador-exemplo
+    InternalError:
+      description: Falha inesperada durante a requisição.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: urn:outguessed:problem:internal-error
+            title: Erro interno
+            status: 500
+            detail: Não foi possível processar a requisição.
+            instance: urn:outguessed:request:identificador-exemplo
+            code: INTERNAL_ERROR
+            requestId: identificador-exemplo
+    ServiceUnavailable:
+      description: Dependência indisponível, schema ausente ou aplicação em encerramento.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: urn:outguessed:problem:service-unavailable
+            title: Serviço indisponível
+            status: 503
+            detail: O serviço não está pronto para receber requisições.
+            instance: urn:outguessed:request:identificador-exemplo
+            code: SERVICE_UNAVAILABLE
+            requestId: identificador-exemplo
