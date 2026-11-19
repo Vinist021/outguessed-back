@@ -3,11 +3,12 @@
 ## Estado atual
 
 - **Planejamento:** documentado nesta pasta.
-- **Implementação:** etapa 01 implementada, com aceite bloqueado na execução dos testes pelo Windows.
-- **Etapa atual:** [01 — Estrutura inicial](01-estrutura-inicial.md).
-- **Próxima etapa:** [02 — Serviços locais](02-servicos-locais.md), após concluir o aceite da etapa 01.
-- **Etapas de implementação concluídas:** 0 de 5.
-- **Verificações da aplicação:** módulo, build, `go vet` e formatação aprovados; testes de `internal/app` aprovados; execução do teste de `internal/httpapi` bloqueada pelo Controle de Aplicativo do Windows.
+- **Implementação:** etapas 01 a 04 concluídas. Validação final em andamento.
+- **Etapa atual:** [05 — Validação e documentação](05-validacao-documentacao.md).
+- **Próximo marco:** aceite da etapa 05 após execução local e aprovação da CI.
+- **Etapas de implementação concluídas:** 4 de 5.
+- **Verificações da aplicação:** testes com detector de corridas, build, análise estática e formatação aprovados. Contratos de saúde, Problem Details, correlação e CORS verificados. A integração real de persistência foi validada na etapa 03.
+- **Verificações de infraestrutura:** Compose e OpenAPI válidos. A migration `1` foi confirmada no PostgreSQL de desenvolvimento e os dois endpoints foram executados no Swagger UI. O rollback no banco descartável e a geração SQL reproduzível constam no aceite da etapa 03.
 
 Estes documentos registram o planejamento e sua execução. A existência de um documento não significa que sua implementação ou seus testes foram concluídos. Os checklists são marcados somente conforme as evidências de cada etapa.
 
@@ -17,11 +18,11 @@ Executar as etapas na ordem abaixo. Iniciar uma etapa somente depois de concluir
 
 | Etapa | Documento | Pré-requisito | Status | Pendências principais |
 | --- | --- | --- | --- | --- |
-| 01 | [Estrutura inicial](01-estrutura-inicial.md) | Ler o guia e as regras atuais | Bloqueada | Executar o teste de `internal/httpapi` sem bloqueio do Controle de Aplicativo do Windows e concluir `go test ./...` |
-| 02 | [Serviços locais](02-servicos-locais.md) | Etapa 01 concluída | Pendente | Compose, serviços locais, ferramentas e ambiente de teste |
-| 03 | [Configuração e persistência](03-configuracao-persistencia.md) | Etapa 02 concluída | Pendente | Configuração, migrations, sqlc, conexões e ciclo de vida |
-| 04 | [Contratos HTTP](04-contratos-http.md) | Etapa 03 concluída | Pendente | Saúde, erros, CORS e OpenAPI com Swagger UI |
-| 05 | [Validação e documentação](05-validacao-documentacao.md) | Etapa 04 concluída | Pendente | Testes completos, CI, README principal e aceite final |
+| 01 | [Estrutura inicial](01-estrutura-inicial.md) | Ler o guia e as regras atuais | Concluída | Nenhuma; aceite registrado após aprovação da suíte completa em Linux |
+| 02 | [Serviços locais](02-servicos-locais.md) | Etapa 01 concluída | Concluída | Nenhuma nesta etapa; Swagger preparado para o OpenAPI da etapa 04 |
+| 03 | [Configuração e persistência](03-configuracao-persistencia.md) | Etapa 02 concluída | Concluída | Nenhuma nesta etapa; serviço de prontidão preparado para os contratos HTTP da etapa 04 |
+| 04 | [Contratos HTTP](04-contratos-http.md) | Etapa 03 concluída | Concluída | Nenhuma nesta etapa. Saúde, erros, CORS e Swagger UI validados |
+| 05 | [Validação e documentação](05-validacao-documentacao.md) | Etapa 04 concluída | Em andamento | Testes completos, CI, README principal e aceite final |
 
 ## Objetivo e decisões gerais
 
@@ -35,6 +36,7 @@ Entregar uma fundação executável e verificável para o backend OutGuessed, re
 - **API sem versionamento:** rotas de negócio sob `/api`, sem versões em caminhos, cabeçalhos, parâmetros ou negociação de conteúdo. Endpoints de saúde fora desse prefixo.
 - OpenAPI e exemplos versionados no Git. A versão do formato OpenAPI e o campo `info.version` são metadados do documento e não introduzem versionamento da API.
 - PostgreSQL com dados persistentes; Redis descartável, sem persistência em disco. A perda do Redis não pode alterar o estado oficial do jogo.
+- Compose com portas no loopback e ambiente de teste independente em memória. `POSTGRES_PORT` mantém `5432` como padrão; neste computador, usar `5434` para preservar o PostgreSQL instalado. [Comandos PowerShell e Bash](02-servicos-locais.md#uso-local).
 - Migrations aplicadas explicitamente antes da API; sqlc com código gerado versionado.
 - Documentação e mensagens humanas em português; campos JSON, códigos, pacotes e variáveis em inglês.
 - CI com verificações estáticas e integração real, usando serviços isolados do desenvolvimento.
@@ -60,14 +62,14 @@ Não marcar uma etapa como concluída porque seu código foi escrito ou porque u
 
 ## Impedimentos
 
-A etapa 01 encontrou um bloqueio confirmado do Controle de Aplicativo do Windows na execução de `httpapi.test.exe`. O bloqueio persistiu com permissão ampliada e com o diretório temporário padrão do Go; os eventos de integridade de código do Windows confirmaram a exigência de assinatura. O build e os testes de `internal/app` foram aprovados, mas a suíte completa ainda não terminou com sucesso.
+A execução inicial da etapa 01 encontrou um bloqueio confirmado do Controle de Aplicativo do Windows na execução de `httpapi.test.exe`. O bloqueio persistiu com permissão ampliada e com o diretório temporário padrão do Go; os eventos de integridade de código do Windows confirmaram a exigência de assinatura. Esse registro é histórico: a pendência de aceite foi atendida em 13/11/2026 com `go test -count=1 -v ./...` aprovado em todos os pacotes em Linux com Go 1.27.1. A política do Windows não foi alterada nem revalidada.
 
-Na inspeção anterior, o ambiente do agente não conseguiu acessar o daemon Docker por restrição de permissão. Isso ainda precisa ser revalidado antes da etapa 02; não comprova que o Docker do usuário esteja parado. As etapas 02 a 05 continuam pendentes e não foram iniciadas.
+O ambiente isolado restringe o socket Docker e a abertura de conexões locais. As verificações das etapas 02 a 04 que exigiam esses recursos ocorreram fora do isolamento. Como a porta `5432` está ocupada pelo PostgreSQL instalado no Linux, a validação de desenvolvimento usou `POSTGRES_PORT=5434`.
 
 | Etapa afetada | Impedimento | Condição para resolver | Situação |
 | --- | --- | --- | --- |
-| 01 | Windows impede a execução de `httpapi.test.exe` por política de integridade de código | Executar `go test ./...` em ambiente que permita os binários de teste e obter sucesso em todos os pacotes | Confirmado em 13/11/2026; aceite bloqueado |
-| 02, 03 e 05 | Acesso ao daemon Docker não validado pelo agente | Conseguir consultar o daemon e iniciar os serviços de teste | A revalidar antes da execução |
+| 01 | Histórico: Windows impediu a execução de `httpapi.test.exe` por política de integridade de código | Executar `go test ./...` em ambiente que permita os binários de teste e obter sucesso em todos os pacotes | Condição de aceite atendida em Linux em 13/11/2026; política do Windows não revalidada |
+| 02 a 05 | Acesso ao daemon Docker restrito no ambiente isolado | Consultar o daemon e iniciar os serviços necessários fora do isolamento | Acesso confirmado nas etapas 02 a 04. A etapa 05 requer acesso para validar os serviços descartáveis |
 
 ## Evidências de conclusão
 
@@ -75,12 +77,12 @@ Registrar data, referência de código quando houver, comandos executados, resul
 
 | Etapa | Data | Referência | Verificações e resultado | Pendências |
 | --- | --- | --- | --- | --- |
-| 01 | 13/11/2026 | Código local em `cmd/api`, `internal/app`, `internal/httpapi`, `go.mod` e `go.sum`; sem commit | `go mod tidy`, `go mod verify`, `go build ./...`, `go vet ./...`, formatação e revisão aprovados; `internal/app` aprovado; `go test ./...` falhou ao executar o binário de `internal/httpapi` por política do Windows. [Registro completo](01-estrutura-inicial.md#registro-de-execução). | Resolver o impedimento de execução e concluir a suíte antes do aceite |
-| 02 | — | — | Não executadas | Implementação não iniciada |
-| 03 | — | — | Não executadas | Implementação não iniciada |
-| 04 | — | — | Não executadas | Implementação não iniciada |
-| 05 | — | — | Não executadas | Implementação não iniciada |
+| 01 | 13/11/2026 | Commit `9dc564c`; formalização somente documental, sem novo commit | Go 1.27.1 em Linux: `go mod verify`, `go mod tidy -diff`, `go build ./...`, `go vet ./...`, `gofmt -l cmd internal` e `git diff --check` aprovados; `go test -count=1 -v ./...` aprovou os três testes de `internal/app` e `internal/httpapi`. [Registro completo](01-estrutura-inicial.md#validação-e-aceite--linux). | Nenhuma nesta etapa; etapa 02 disponível para início |
+| 02 | 17/11/2026 | `compose.yaml` e marcador `db/migrations/.gitkeep`; alterações locais sem commit | Compose padrão e todos os perfis válidos; quatro serviços saudáveis; conexões PostgreSQL autenticadas, `PONG` Redis, isolamento, montagens e loopback conferidos; sqlc 1.31.1 e ambos os migrate 4.20.1 executados; revisão e `git diff --check` aprovados. [Registro completo](02-servicos-locais.md#registro-de-execução). | Nenhuma nesta etapa; etapa 03 disponível para início |
+| 03 | 17/11/2026 | Configuração, migrations, sqlc, clientes e testes; alterações locais sem commit | Migration `1` limpa em desenvolvimento e teste; rollback/reaplicação e proteção de dependentes aprovados; geração SQL reproduzível; build, vet, dependências, testes e detector de corridas aprovados; executável recusou inicializações inválidas sem HTTP e encerrou por SIGTERM com logs JSON sanitizados. [Registro completo](03-configuracao-persistencia.md#registro-de-execução). | Nenhuma nesta etapa; etapa 04 disponível para início |
+| 04 | 19/11/2026 | Roteador HTTP, testes e `docs/openapi.yaml` em alterações locais | Testes com detector de corridas, requisições HTTP locais, logs sanitizados, CORS e validação OpenAPI aprovados. Ambos os endpoints responderam 200 no Swagger UI. [Registro completo](04-contratos-http.md#registro-de-execução). | Nenhuma nesta etapa. Etapa 05 disponível para início |
+| 05 | — | — | Implementação em andamento | Execução local e aprovação da CI |
 
 ## Navegação
 
-[Etapa 01 — implementação e validação pendente](01-estrutura-inicial.md) · [Aceite final na etapa 05](05-validacao-documentacao.md)
+[Etapa 04 — concluída](04-contratos-http.md) · [Etapa 05 — validação e aceite final](05-validacao-documentacao.md)

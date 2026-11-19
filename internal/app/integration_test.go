@@ -5,6 +5,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"io"
 	"log/slog"
@@ -42,8 +43,8 @@ func integrationConfig(t *testing.T) config.Config {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Postgres.ConnConfig.Database != "outguessed_test" {
-		t.Fatal("a integração exige o banco descartável outguessed_test")
+	if cfg.Postgres.ConnConfig.Database != "outguessed_test" || cfg.Postgres.ConnConfig.User != "outguessed_test" {
+		t.Fatal("a integração exige o banco e usuário descartáveis outguessed_test")
 	}
 	return cfg
 }
@@ -79,6 +80,25 @@ func TestFoundationIntegration(t *testing.T) {
 		t.Fatal("Redis de teste indisponível")
 	}
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+
+	t.Run("Redis round trip", func(t *testing.T) {
+		key := "outguessed:integration:" + rand.Text()
+		const value = "foundation"
+		created, err := redisClient.SetNX(ctx, key, value, time.Minute).Result()
+		if err != nil || !created {
+			t.Fatal("gravar chave exclusiva no Redis de teste")
+		}
+		t.Cleanup(func() {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if err := redisClient.Del(cleanupCtx, key).Err(); err != nil {
+				t.Error("remover chave exclusiva do Redis de teste")
+			}
+		})
+		if got, err := redisClient.Get(ctx, key).Result(); err != nil || got != value {
+			t.Fatal("ler o valor gravado no Redis de teste")
+		}
+	})
 
 	t.Run("generated query in both schema states", func(t *testing.T) {
 		tx, err := pool.Begin(ctx)
@@ -122,7 +142,8 @@ func TestFoundationIntegration(t *testing.T) {
 
 	t.Run("healthy startup and cleanup", func(t *testing.T) {
 		cfg := integrationConfig(t)
-		cfg.Postgres.ConnConfig.RuntimeParams["application_name"] = "outguessed_stage03_cleanup"
+		applicationName := "outguessed_integration_" + rand.Text()
+		cfg.Postgres.ConnConfig.RuntimeParams["application_name"] = applicationName
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		finished := make(chan error, 1)
@@ -143,11 +164,11 @@ func TestFoundationIntegration(t *testing.T) {
 		ticker := time.NewTicker(10 * time.Millisecond)
 		defer ticker.Stop()
 		for {
-			response, err := client.Get("http://" + cfg.HTTPAddr + "/unconfigured")
+			response, err := client.Get("http://" + cfg.HTTPAddr + "/health/live")
 			if err == nil {
 				response.Body.Close()
-				if response.StatusCode != http.StatusNotFound {
-					t.Fatalf("status = %d", response.StatusCode)
+				if response.StatusCode != http.StatusOK {
+					t.Fatalf("vivacidade respondeu %d", response.StatusCode)
 				}
 				break
 			}
@@ -159,12 +180,25 @@ func TestFoundationIntegration(t *testing.T) {
 			case <-ticker.C:
 			}
 		}
-		cancel()
-		if err := <-finished; err != nil {
+		response, err := client.Get("http://" + cfg.HTTPAddr + "/health/ready")
+		if err != nil {
 			t.Fatal(err)
 		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("prontidão respondeu %d", response.StatusCode)
+		}
+		cancel()
+		select {
+		case err := <-finished:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("API não encerrou dentro do prazo")
+		}
 		var connections int
-		if err := pool.QueryRow(t.Context(), "SELECT count(*) FROM pg_stat_activity WHERE application_name = $1", "outguessed_stage03_cleanup").Scan(&connections); err != nil || connections != 0 {
+		if err := pool.QueryRow(t.Context(), "SELECT count(*) FROM pg_stat_activity WHERE application_name = $1", applicationName).Scan(&connections); err != nil || connections != 0 {
 			t.Fatalf("conexões não liberadas: quantidade=%d erro=%v", connections, err)
 		}
 	})
