@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Vinist021/outguessed-back/internal/config"
+	"github.com/Vinist021/outguessed-back/internal/health"
 	"github.com/Vinist021/outguessed-back/internal/httpapi"
 )
 
@@ -24,7 +26,7 @@ func TestRunAddressInUse(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	err = Run(ctx, listener.Addr().String(), logger)
+	err = runHTTP(ctx, config.Config{HTTPAddr: listener.Addr().String()}, testReadiness(), logger)
 	var networkError *net.OpError
 	if !errors.As(err, &networkError) || networkError.Op != "listen" {
 		t.Fatalf("erro recebido = %v; esperada falha de abertura do endereço", err)
@@ -45,7 +47,7 @@ func TestServeCancellationClosesListener(t *testing.T) {
 	finished := make(chan struct{})
 	var runErr error
 	go func() {
-		runErr = serve(ctx, server, listener, logger)
+		runErr = serve(ctx, server, listener, testReadiness(), time.Second, logger)
 		close(finished)
 	}()
 	t.Cleanup(func() {
@@ -85,4 +87,116 @@ func TestServeCancellationClosesListener(t *testing.T) {
 		connection.Close()
 		t.Fatal("o servidor ainda aceita conexões após o encerramento")
 	}
+}
+
+type readySchema struct{}
+
+func (readySchema) CheckSchema(context.Context) (bool, error) { return true, nil }
+
+type readyRedis struct{}
+
+func (readyRedis) Ping(context.Context) error { return nil }
+
+func testReadiness() *health.Service {
+	return health.New(readySchema{}, readyRedis{}, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+}
+
+func TestRunAlreadyCancelledDoesNotOpenClients(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := Run(ctx, config.Config{}, slog.Default()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestServeDrainsActiveRequests(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	entered, release, draining := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(entered)
+		select {
+		case <-release:
+			w.WriteHeader(http.StatusNoContent)
+		case <-r.Context().Done():
+			t.Error("requisição cancelada antes de esgotar o prazo de encerramento")
+		}
+	})}
+	server.RegisterOnShutdown(func() { close(draining) })
+	readiness := testReadiness()
+	finished := make(chan error, 1)
+	go func() { finished <- serve(ctx, server, listener, readiness, time.Second, slog.Default()) }()
+	t.Cleanup(func() { cancel(); server.Close() })
+	response := make(chan error, 1)
+	go func() {
+		client := &http.Client{Timeout: 2 * time.Second}
+		res, err := client.Get("http://" + listener.Addr().String())
+		if err == nil {
+			res.Body.Close()
+			if res.StatusCode != http.StatusNoContent {
+				err = errors.New("requisição ativa não foi concluída")
+			}
+		}
+		response <- err
+	}()
+	<-entered
+	cancel()
+	<-draining
+	if err := readiness.Check(context.Background()); !errors.Is(err, health.ErrStopping) {
+		t.Errorf("prontidão durante encerramento: %v", err)
+	}
+	close(release)
+	if err := <-response; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-finished; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestServeCancelsAndWaitsForRequestsAfterDeadline(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	entered, exited := make(chan struct{}), make(chan struct{})
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(entered)
+		<-r.Context().Done()
+		close(exited)
+	})}
+	finished := make(chan error, 1)
+	go func() { finished <- serve(ctx, server, listener, testReadiness(), 20*time.Millisecond, slog.Default()) }()
+	t.Cleanup(func() { cancel(); server.Close() })
+	response := make(chan struct{})
+	go func() {
+		defer close(response)
+		client := &http.Client{Timeout: 2 * time.Second}
+		res, err := client.Get("http://" + listener.Addr().String())
+		if err == nil {
+			res.Body.Close()
+		}
+	}()
+	<-entered
+	cancel()
+	select {
+	case err := <-finished:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("prazo de encerramento: %v", err)
+		}
+		select {
+		case <-exited:
+		default:
+			t.Fatal("servidor retornou enquanto o handler ainda executava")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("servidor não encerrou dentro do limite")
+	}
+	<-response
 }
