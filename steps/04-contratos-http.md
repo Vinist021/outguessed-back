@@ -105,15 +105,15 @@ Origem permitida deve receber os cabeçalhos e o preflight correspondentes. Orig
 
 ## Checklist de implementação
 
-- [ ] Implementar os dois endpoints de saúde e sua serialização.
-- [ ] Implementar Problem Details e os quatro mapeamentos iniciais.
-- [ ] Implementar correlação de requisições e logs HTTP sanitizados.
-- [ ] Configurar recuperação de panics, 404, 405 e prazos HTTP.
-- [ ] Implementar CORS com origens explícitas e sem credenciais.
-- [ ] Criar OpenAPI coerente com os handlers, sem versionamento da API.
-- [ ] Concluir a integração do perfil `docs` com o Swagger UI.
-- [ ] Executar verificações de contrato e navegação no Swagger UI.
-- [ ] Registrar evidências e atualizar o [controle de progresso](README.md).
+- [x] Implementar os dois endpoints de saúde e sua serialização.
+- [x] Implementar Problem Details e os quatro mapeamentos iniciais.
+- [x] Implementar correlação de requisições e logs HTTP sanitizados.
+- [x] Configurar recuperação de panics, 404, 405 e prazos HTTP.
+- [x] Implementar CORS com origens explícitas e sem credenciais.
+- [x] Criar OpenAPI coerente com os handlers, sem versionamento da API.
+- [x] Concluir a integração do perfil `docs` com o Swagger UI.
+- [x] Executar verificações de contrato e navegação no Swagger UI.
+- [x] Registrar evidências e atualizar o [controle de progresso](README.md).
 
 ## Entregáveis
 
@@ -145,7 +145,19 @@ Não criar uma rota pública que provoque panic ou erro interno apenas para test
 
 ## Registro de execução
 
-**Ainda não executada.** Registrar os contratos e verificações efetivamente observados, sem preencher evidências com resultados previstos.
+**Concluída em 19/11/2026.** A validação usou Go 1.27.1 em Linux e os serviços locais com PostgreSQL na porta `5434` e Redis na `6379`. A API de validação usou variáveis de processo derivadas de `.env.example` e foi encerrada por SIGTERM após os testes. O Swagger UI foi parado ao final.
+
+| Verificação | Resultado observado |
+| --- | --- |
+| `go test -race -count=1 ./...` | Todos os pacotes passaram. Testes controlados cobriram 500 por panic, 503 por falha de dependência, schema ausente e encerramento. Confirmaram consultas novas a cada prontidão, vivacidade independente e recuperação de 503 para 200. |
+| `go mod verify`, `go mod tidy -diff`, `go vet ./...`, `go build ./...`, formatação e `git diff --check` | Verificações aprovadas. |
+| `docker compose run --rm migrate version` com `POSTGRES_PORT=5434` | PostgreSQL saudável e migration `1` aplicada em desenvolvimento. |
+| `curl` contra a API local | As duas rotas de saúde responderam 200 com JSON e `Cache-Control: no-store`. Caminho inexistente respondeu 404 e método incompatível respondeu 405 com `Allow: GET`, ambos com Problem Details. Os corpos corresponderam aos exemplos OpenAPI após substituir o identificador de ocorrência. |
+| CORS e logs da API local | As quatro origens do exemplo local foram autorizadas. Requisições sem origem e de origem recusada mantiveram o status da rota. Preflight autorizado retornou 204 e o recusado seguiu para 405. Os logs correlacionaram método, caminho sem query, status e duração pelo `X-Request-ID` gerado no servidor. |
+| `docker compose --profile "*" config --quiet` e `openapi-spec-validator --schema 3.0` | Configuração Compose e [especificação OpenAPI](../docs/openapi.yaml) válidas. |
+| `docker compose --profile docs up -d swagger` e Chrome | A montagem de `/spec/openapi.yaml` estava somente para leitura. Em `http://localhost:8081`, o **Try it out** executou os dois endpoints e exibiu 200, corpo JSON e `X-Request-ID`. |
+
+A interrupção e a restauração de PostgreSQL e Redis reais com observação HTTP integram o aceite da [etapa 05](05-validacao-documentacao.md).
 
 ## Navegação
 

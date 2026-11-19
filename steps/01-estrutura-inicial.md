@@ -62,7 +62,7 @@ Essa tabela define onde cada responsabilidade ficará. Criar pacotes e diretóri
 - [x] Fixar apenas as dependências já utilizadas.
 - [x] Ajustar o `.gitignore` às saídas Go e manter `.env` ignorado e `.env.example` permitido, preservando regras locais úteis.
 - [x] Executar as verificações desta etapa e revisar o diff.
-- [ ] Obter sucesso em `go test ./...`, incluindo a execução do teste de `internal/httpapi`.
+- [x] Obter sucesso em `go test ./...`, incluindo a execução do teste de `internal/httpapi`.
 - [x] Registrar evidências e atualizar o [controle de progresso](README.md).
 
 ## Entregáveis
@@ -90,6 +90,10 @@ O build, o `go vet` e os testes devem terminar com sucesso; `gofmt -l .` não de
 Nesta etapa, build sem testes ainda não comprova comportamento de infraestrutura. Conexões e saúde serão verificadas nas etapas 03 e 04; a cobertura integrada será consolidada na etapa 05.
 
 ## Registro de execução
+
+**Situação atual:** etapa concluída, com aceite registrado em 13/11/2026 após a validação completa em Linux com Go 1.27.1. A etapa 02 está disponível para início.
+
+### Execução inicial — Windows
 
 **Data:** 13/11/2026 (America/Sao_Paulo).
 
@@ -123,7 +127,33 @@ O diretório `.cache/go-tmp` foi criado com `New-Item -ItemType Directory -Path 
 
 **Impedimento confirmado:** `go test ./...` foi repetido com permissão ampliada e com o diretório temporário padrão `C:\Users\vini\go-tmp`; o bloqueio de `httpapi.test.exe` persistiu. A consulta de eventos `Microsoft-Windows-CodeIntegrity/Operational`, evento 3077, confirmou que o executável não atende aos requisitos de assinatura da política ativa. As políticas do Windows e os testes foram mantidos.
 
-**Pendência para o aceite:** executar `go test ./...` em um ambiente que permita os binários locais de teste e confirmar todos os pacotes aprovados. Depois, registrar o resultado e concluir a etapa no controle central. PostgreSQL, Redis, saúde e contratos HTTP permanecem nas etapas posteriores.
+**Pendência identificada na execução inicial:** executar `go test ./...` em um ambiente que permita os binários locais de teste e confirmar todos os pacotes aprovados. Essa condição foi atendida na validação em Linux registrada abaixo.
+
+### Validação e aceite — Linux
+
+**Data:** 13/11/2026 (America/Sao_Paulo).
+
+**Referência de código:** commit `9dc564c` (`feat: implementa estrutura inicial do projeto`), com repositório limpo durante a conferência.
+
+**Ambiente:** Go 1.27.1 em Linux/amd64, acessado por `/usr/local/go/bin`. O cache de build foi direcionado para `/tmp/outguessed-step01-review-go-cache` e os arquivos temporários para `/tmp`; as verificações não alteraram arquivos do projeto.
+
+| Comando executado | Resultado observado |
+| --- | --- |
+| `go version` | `go version go1.27.1 linux/amd64`. |
+| `go mod verify` | Sucesso: `all modules verified`. |
+| `go mod tidy -diff` | Sucesso, sem diferenças em `go.mod` ou `go.sum`. |
+| `go build ./...` | Sucesso. |
+| `go vet ./...` | Sucesso. |
+| `go test -count=1 -v ./...` | Sucesso: os dois testes de `internal/app` e o teste de `internal/httpapi` aprovados; `cmd/api` sem testes. |
+| `gofmt -l cmd internal` | Sucesso, sem arquivos listados. |
+| `git diff --check` | Sucesso. |
+| `git status --porcelain=v1 --untracked-files=all` | Sem alterações ao término da conferência. |
+
+A primeira tentativa dos testes em Linux foi impedida pela restrição do ambiente isolado à abertura de sockets. A suíte foi repetida com permissão para usar o loopback e todos os testes passaram, sem modificar código, testes ou configuração persistente.
+
+**Aceite:** concluído. A execução aprovada em Linux atende à pendência de validar todos os pacotes em um ambiente que permita os binários de teste. O bloqueio anterior do Windows permanece como histórico; sua política não foi alterada nem revalidada.
+
+Esta formalização atualiza somente este documento e o controle central, sem criar commit. PostgreSQL, Redis, saúde e contratos HTTP permanecem nas etapas posteriores; a etapa 02 continua pendente e não foi iniciada.
 
 ## Navegação
 

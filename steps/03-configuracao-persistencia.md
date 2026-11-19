@@ -59,10 +59,12 @@ A primeira consulta será exclusivamente de prontidão:
 
 ```sql
 -- name: CheckSchema :one
-SELECT to_regnamespace('outguessed') IS NOT NULL AS ready;
+SELECT (to_regnamespace('outguessed') IS NOT NULL)::boolean AS ready;
 ```
 
 Essa consulta verifica a estrutura necessária nesta fundação e o acesso real ao PostgreSQL. Não substitui futuras verificações de compatibilidade das migrations de negócio.
+
+O cast explícito preserva a semântica da expressão e permite ao analisador local do sqlc 1.31.1 gerar o retorno Go como `bool`, sem acesso a um banco para inferência de tipos.
 
 Versionar consultas e arquivos gerados. Nunca editar manualmente o resultado do gerador. A geração deve funcionar usando apenas os arquivos SQL locais, sem banco remoto ou serviço sqlc Cloud. A CI posteriormente verificará se a regeneração mantém o repositório sem diferenças.
 
@@ -83,20 +85,73 @@ Usar `slog` com saída JSON e nível configurável. Registrar inicialização, f
 
 Não registrar URLs com senha, variáveis de ambiente completas, credenciais ou payloads sensíveis. Erros internos devem permanecer identificáveis na aplicação, com contexto e encadeamento quando necessário; sua tradução para HTTP ocorrerá apenas na borda.
 
+## Uso local
+
+Na raiz do backend, preparar o arquivo local somente se ele ainda não existir.
+
+PowerShell:
+
+```powershell
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
+```
+
+Bash:
+
+```bash
+test -e .env || cp .env.example .env
+```
+
+O exemplo usa a porta PostgreSQL padrão `5432`. Neste computador, ajustar **tanto** `POSTGRES_PORT` quanto a porta em `DATABASE_URL` para `5434`, conforme a etapa 02. A API roda no computador e usa `127.0.0.1`; as ferramentas migrate usam os nomes internos dos serviços e sempre a porta interna `5432`. Os usuários, senhas e bancos das URLs devem corresponder aos configurados no Compose. Alterar as variáveis de inicialização do PostgreSQL não altera automaticamente as credenciais de um volume já existente.
+
+Variáveis presentes no processo prevalecem sobre `.env`, inclusive `POSTGRES_PORT` na interpolação do Compose. O modo da API é escolhido por `APP_ENV` do processo, com padrão `development`; o campo do arquivo nunca troca esse modo. Em `test` e `production`, fornecer as variáveis pelo processo, pois a API não lê `.env`. Uma lista vazia de `CORS_ALLOWED_ORIGINS` representa nenhuma origem autorizada; o tratamento HTTP será implementado na etapa 04.
+
+Após preparar a configuração:
+
+```powershell
+docker compose up -d --wait postgres redis
+docker compose run --rm migrate up
+docker compose run --rm migrate version
+docker compose run --rm sqlc generate
+go run ./cmd/api
+```
+
+Encerrar a API com `Ctrl+C`. Nesta etapa, o roteador continua sem endpoints de saúde; o log de início confirma que as dependências foram verificadas antes da abertura do HTTP. A aplicação não aplica migrations automaticamente.
+
+Para executar os testes reais, iniciar apenas os serviços descartáveis e aplicar a migration de teste:
+
+```powershell
+docker compose --profile test up -d --wait postgres-test redis-test
+docker compose run --rm migrate-test up
+$env:TEST_DATABASE_URL = "postgres://outguessed_test:outguessed_test_local@127.0.0.1:5433/outguessed_test?sslmode=disable"
+$env:TEST_REDIS_URL = "redis://127.0.0.1:6380/0"
+go test -tags=integration ./...
+```
+
+No Bash, definir as mesmas variáveis com `export TEST_DATABASE_URL='...'` e `export TEST_REDIS_URL='...'`. A suíte padrão (`go test ./...`) dispensa serviços externos; a suíte com a tag `integration` exige ambas as variáveis e o banco `outguessed_test`, sem fallback para desenvolvimento. Não executar simultaneamente os cenários que alteram esse schema. Os testes revertem seus objetos de verificação e restauram o schema, sem usar `migrate force`.
+
+O rollback real deve ser executado exclusivamente no banco descartável:
+
+```powershell
+docker compose run --rm migrate-test down 1
+docker compose run --rm migrate-test up
+```
+
+Não remover o volume de desenvolvimento. Ao terminar os testes, os containers descartáveis podem ser parados e removidos pelos comandos documentados na etapa 02.
+
 ## Checklist de implementação
 
-- [ ] Implementar configuração tipada e carregamento local de `.env` com precedência correta.
-- [ ] Criar `.env.example` e documentar valores locais, sem sobrescrever o `.env` existente.
-- [ ] Criar as migrations inicial e de rollback, sem tabelas de negócio.
-- [ ] Configurar migrate para bancos de desenvolvimento e teste independentes.
-- [ ] Configurar sqlc e criar a consulta `CheckSchema`.
-- [ ] Gerar e versionar o código SQL, usando-o na verificação PostgreSQL.
-- [ ] Conectar e gerenciar os clientes PostgreSQL e Redis.
-- [ ] Implementar inicialização com prazo e falha antes de aceitar HTTP.
-- [ ] Preparar recuperação de prontidão e encerramento controlado.
-- [ ] Configurar logs JSON sem dados sensíveis.
-- [ ] Executar as verificações disponíveis e revisar o diff.
-- [ ] Registrar evidências e atualizar o [controle de progresso](README.md).
+- [x] Implementar configuração tipada e carregamento local de `.env` com precedência correta.
+- [x] Criar `.env.example` e documentar valores locais, sem sobrescrever o `.env` existente.
+- [x] Criar as migrations inicial e de rollback, sem tabelas de negócio.
+- [x] Configurar migrate para bancos de desenvolvimento e teste independentes.
+- [x] Configurar sqlc e criar a consulta `CheckSchema`.
+- [x] Gerar e disponibilizar para versionamento o código SQL, usando-o na verificação PostgreSQL.
+- [x] Conectar e gerenciar os clientes PostgreSQL e Redis.
+- [x] Implementar inicialização com prazo e falha antes de aceitar HTTP.
+- [x] Preparar recuperação de prontidão e encerramento controlado.
+- [x] Configurar logs JSON sem dados sensíveis.
+- [x] Executar as verificações disponíveis e revisar o diff.
+- [x] Registrar evidências e atualizar o [controle de progresso](README.md).
 
 ## Entregáveis
 
@@ -132,7 +187,28 @@ Os contratos HTTP de prontidão serão entregues na etapa 04. A demonstração c
 
 ## Registro de execução
 
-**Ainda não executada.** Registrar configuração validada, migrations aplicadas, geração executada, resultados observados e pendências. Não incluir senhas ou URLs de conexão completas nas evidências.
+**Situação:** concluída em 17/11/2026 (America/Sao_Paulo), com alterações locais sem criação de commit.
+
+**Ambiente:** Linux/amd64, Go 1.27.1, sqlc 1.31.1 e migrate 4.20.1. O Go foi executado por `/usr/local/go/bin/go`, pois seu diretório não estava no `PATH` desta sessão. As operações Docker e os testes que abrem conexões foram executados com acesso fora do isolamento. Nenhum `.env` foi criado ou sobrescrito.
+
+**Implementação:** configuração centralizada em `internal/config`, serviço de prontidão em `internal/health`, consulta gerada em `internal/postgres/dbgen` e composição dos recursos em `internal/app`. Os diagnósticos internos do Redis são encaminhados ao `slog` em nível debug com mensagem sanitizada; as falhas operacionais são identificadas pelo serviço de saúde. O exemplo local e os comandos acima documentam a correspondência das portas e credenciais.
+
+| Verificação executada | Resultado observado |
+| --- | --- |
+| `docker compose --profile '*' config --quiet` | Todos os perfis válidos; os dois migrate usam `search_path=public`, separados do schema de aplicação. |
+| `docker compose run --rm migrate up` e `migrate version`, com `POSTGRES_PORT=5434` | Migration aplicada em desenvolvimento; versão `1`. PostgreSQL de desenvolvimento existente preservado na porta `5434`. |
+| `docker compose --profile test up -d --wait --wait-timeout 120 postgres-test redis-test` | Serviços descartáveis saudáveis nas portas `5433` e `6380`. |
+| `migrate-test up`, nova execução de `up`, `version`, `down 1` e novo `up` pelo Compose | Aplicação bem-sucedida, reaplicação com `no change`, versão `1`, rollback e nova aplicação bem-sucedidos. |
+| Consultas de inspeção após rollback e após nova aplicação | O schema ficou ausente após `down 1`; `public.schema_migrations` permaneceu presente. Ao final, desenvolvimento e teste tinham schema presente, zero tabelas no schema `outguessed` e versão `1` com `dirty=false`. |
+| `docker compose run --rm --no-deps sqlc generate`, com repetição e comparação SHA-256 | Geração apenas com SQL local, retorno Go `bool` e três arquivos gerados idênticos na repetição. Nenhum código gerado editado manualmente. |
+| `go test ./...` e `go test -count=1 -v -tags=integration ./...` | Suítes unitária e de integração aprovadas. Configuração, precedência, modos, erros sanitizados, recuperação, prazos e encerramento verificados. |
+| `go test -race -count=1 -tags=integration ./...` | Todos os pacotes aprovados com detector de corridas; integração incluiu consulta gerada nos dois estados do schema, bloqueio do rollback com objeto dependente, inicialização saudável, liberação das conexões PostgreSQL e falhas de PostgreSQL, Redis e schema antes da abertura do HTTP. |
+| Teste temporário do executável em processos separados | Configuração inválida, autenticação PostgreSQL inválida, Redis indisponível e schema ausente retornaram código `1`, sem listener HTTP e com logs JSON sanitizados. Inicialização saudável validou dependências antes do HTTP, retornou `404` no roteador ainda vazio e encerrou por SIGTERM com código `0`, dentro dos prazos configurados. |
+| `go mod verify`, `go mod tidy -diff`, `go build ./...`, `go vet ./...`, `gofmt -l cmd internal` e `git diff --check` | Verificações aprovadas, sem diferenças de dependências, problemas de formatação ou whitespace. |
+
+A primeira tentativa de `go mod tidy` sofreu uma falha transitória de rede no proxy Go; a repetição concluiu e `go mod tidy -diff` passou. Os testes de rollback com objeto dependente usaram transação revertida no banco descartável, sem deixar a ferramenta migrate em estado dirty e sem executar `force`.
+
+**Aceite:** etapa 03 concluída. A API e os containers de teste foram encerrados após a validação; os serviços de desenvolvimento permanecem ativos. As alterações anteriores dos documentos das etapas 01 e 02 foram preservadas. Endpoints de saúde, erros HTTP, CORS e OpenAPI continuam na etapa 04. A interrupção e restauração dos serviços reais com observação HTTP, a CI e o README principal permanecem na etapa 05.
 
 ## Navegação
 
